@@ -1,21 +1,18 @@
 package com.github.beat.signer.pdf_signer;
+
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.URL;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
-import java.security.Security;
 import java.security.UnrecoverableKeyException;
 import java.security.cert.CertStore;
 import java.security.cert.Certificate;
-import java.security.cert.CertificateException;
 import java.security.cert.CollectionCertStoreParameters;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
@@ -24,7 +21,6 @@ import java.util.Calendar;
 import java.util.Collection;
 import java.util.Hashtable;
 import java.util.List;
-import java.util.UUID;
 
 import org.apache.commons.io.IOUtils;
 import org.apache.pdfbox.exceptions.COSVisitorException;
@@ -32,6 +28,9 @@ import org.apache.pdfbox.exceptions.SignatureException;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.interactive.digitalsignature.PDSignature;
 import org.apache.pdfbox.pdmodel.interactive.digitalsignature.SignatureInterface;
+import org.apache.pdfbox.pdmodel.interactive.digitalsignature.SignatureOptions;
+import org.apache.pdfbox.pdmodel.interactive.digitalsignature.visible.PDVisibleSigProperties;
+import org.apache.pdfbox.pdmodel.interactive.digitalsignature.visible.PDVisibleSignDesigner;
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1EncodableVector;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
@@ -58,24 +57,28 @@ public class Signing implements SignatureInterface {
 
 	private PrivateKey privKey;
 
-	private Certificate[] cert;
+	private Certificate[] certChain;
 	
 	private TSAClient tsaClient;
 
+	private SignatureAppearance signatureAppearance;
+
 	public Signing(SignatureInformation signatureInformation) {
 		try {
-
+			this.signatureAppearance = signatureInformation
+					.getSignatureAppearance();
 			SignatureCryptoInformation cryptoInfo = signatureInformation
 					.getSignatureCryptoInfo();
 			KeyStore keystore = cryptoInfo.getKeystore();
 			privKey = (PrivateKey) keystore.getKey(cryptoInfo.getCertAlias(),
 					cryptoInfo.getPassword());
-			cert = keystore.getCertificateChain(cryptoInfo.getCertAlias());
+			certChain = keystore.getCertificateChain(cryptoInfo.getCertAlias());
 			
 			if (signatureInformation.getTimestamper() != null) {
 				tsaClient = new TSAClient(
 						signatureInformation.getTimestamper(),
-						MessageDigest.getInstance("SHA-256"));
+						MessageDigest.getInstance(signatureInformation
+								.getTimestamper().getDigestToUseForRequest()));
 			}
 		} catch (KeyStoreException e) {
 			throw new RuntimeException("Password wrong", e);
@@ -86,18 +89,18 @@ public class Signing implements SignatureInterface {
 		}
 	}
 
-	public File signPDF(File document) throws IOException, COSVisitorException,
+	public File signPDF(File outputDoc, File document) throws IOException,
+			COSVisitorException,
 			SignatureException {
 		if (document == null || !document.exists()) {
 			new RuntimeException("Document to sign not found");
 		}
 
-		File outputDocument = new File("resources/" + UUID.randomUUID().toString() + document.getName());
 		FileInputStream fis = new FileInputStream(document);
-		FileOutputStream fos = new FileOutputStream(outputDocument);
+		FileOutputStream fos = new FileOutputStream(outputDoc);
 
 		org.apache.commons.io.IOUtils.copy(fis, fos);
-		fis = new FileInputStream(outputDocument);
+		fis = new FileInputStream(outputDoc);
 
 		// load document
 		PDDocument doc = PDDocument.load(document);
@@ -107,27 +110,51 @@ public class Signing implements SignatureInterface {
 		signature.setFilter(PDSignature.FILTER_ADOBE_PPKLITE); // default filter
 		// subfilter for basic and PAdES Part 2 signatures
 		signature.setSubFilter(PDSignature.SUBFILTER_ADBE_PKCS7_DETACHED);
-		signature.setName("signer name");
-		signature.setLocation("signer location");
-		signature.setReason("reason for signature");
+		signature.setName(signatureAppearance.getContact());
+		signature.setLocation(signatureAppearance.getLocation());
+		signature.setReason(signatureAppearance.getReason());
 
 		// the signing date, needed for valid signature
 		signature.setSignDate(Calendar.getInstance());
 
 		// register signature dictionary and sign interface
-		doc.addSignature(signature, this);
-
+		if (signatureAppearance.isVisibleSignature()) {
+			SignatureOptions sigOpts = createVisibleSignature(doc);
+			doc.addSignature(signature, this, sigOpts);
+		} else {
+			doc.addSignature(signature, this);
+		}
 		// write incremental (only for signing purpose)
 		doc.saveIncremental(fis, fos);
 
-		return outputDocument;
+		return outputDoc;
 	}
 
-	public byte[] sign(InputStream content) throws SignatureException,
-			IOException {
+	private SignatureOptions createVisibleSignature(PDDocument doc)
+			throws IOException {
+		SignatureOptions sigOpts = new SignatureOptions();
+
+		// why is this needed?
+		PDVisibleSignDesigner visibleSig = new PDVisibleSignDesigner(doc,
+				Signing.class.getResourceAsStream("/test.jpg"), 1);
+		visibleSig.xAxis(0).yAxis(0).zoom(-50).signatureFieldName("signature");
+
+		PDVisibleSigProperties signatureProperties = new PDVisibleSigProperties();
+
+		signatureProperties.signerName(signatureAppearance.getContact())
+				.signerLocation(signatureAppearance.getLocation())
+				.signatureReason(signatureAppearance.getReason())
+				.preferredSize(0).page(1).visualSignEnabled(true)
+				.setPdVisibleSignature(visibleSig).buildSignature();
+
+		sigOpts.setVisualSignature(signatureProperties);
+		return sigOpts;
+	}
+
+	public byte[] sign(InputStream content) {
 		CMSSignedDataGenerator gen = new CMSSignedDataGenerator();
 		// CertificateChain
-		List<Certificate> certList = Arrays.asList(cert);
+		List<Certificate> certList = Arrays.asList(certChain);
 
 		try {
 			CertStore certStore = CertStore.getInstance("Collection",
@@ -156,39 +183,9 @@ public class Signing implements SignatureInterface {
 			new RuntimeException(e);
 		}
 		throw new RuntimeException("Problem while preparing signature");
+
 	}
 
-	public static void main(String[] args) throws KeyStoreException,
-			NoSuchAlgorithmException, CertificateException,
-			FileNotFoundException, IOException, COSVisitorException,
-			SignatureException {
-
-		SignatureInformation signatureInfo = new SignatureInformation();
-		SignatureCryptoInformation signatureCryptoInfo = new SignatureCryptoInformation();
-		signatureCryptoInfo
-				.setCertAlias("Heiri Muster (Qualified Signature)");
-		String password = "keypassword";
-		signatureCryptoInfo.setPassword(password.toCharArray());
-
-		File ksFile = new File("resources/swisssign_suisseid_test_qual_0000.p12");
-		KeyStore keystore = KeyStore.getInstance("PKCS12", provider);
-
-		keystore.load(new FileInputStream(ksFile), password.toCharArray());
-
-		signatureCryptoInfo.setKeystore(keystore);
-		signatureInfo.setSignatureCryptoInfo(signatureCryptoInfo);
-		
-		TSAInformation timestamper = new TSAInformation();
-		timestamper.setTsaUrl(new URL("http://tsa.pki.admin.ch/tsa"));
-		signatureInfo.setTimestamper(timestamper);
-
-		Security.addProvider(provider);
-
-		File document = new File("resources/test.pdf");
-
-		Signing signing = new Signing(signatureInfo);
-		signing.signPDF(document);
-	}
 	
 	/**
 	 * We just extend CMS signed Data

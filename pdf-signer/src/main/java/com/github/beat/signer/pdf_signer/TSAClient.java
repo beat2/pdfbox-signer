@@ -1,4 +1,5 @@
 package com.github.beat.signer.pdf_signer;
+
 /*
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -29,9 +30,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
-import org.bouncycastle.asn1.nist.NISTObjectIdentifiers;
-import org.bouncycastle.asn1.oiw.OIWObjectIdentifiers;
-import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
+import org.bouncycastle.jcajce.provider.util.DigestFactory;
 import org.bouncycastle.tsp.TSPException;
 import org.bouncycastle.tsp.TimeStampRequest;
 import org.bouncycastle.tsp.TimeStampRequestGenerator;
@@ -42,12 +41,12 @@ import org.bouncycastle.tsp.TimeStampToken;
  * Time Stamping Authority (TSA) Client [RFC 3161].
  * 
  * @author Vakhtang Koroghlishvili
- * @author John Hewson
+ * @author John HewsonF
  */
 public class TSAClient {
 	private static final int CONNECT_TIMEOUT = 3000;
 
-	private static final Log log = LogFactory.getLog(TSAClient.class);
+	private static final Log LOGGER = LogFactory.getLog(TSAClient.class);
 
 	private final MessageDigest digest;
 
@@ -107,7 +106,7 @@ public class TSAClient {
 	// gets response data for the given encoded TimeStampRequest data
 	// throws IOException if a connection to the TSA cannot be established
 	private byte[] getTSAResponse(byte[] request) throws IOException {
-		log.debug("Opening connection to TSA server");
+		LOGGER.debug("Opening connection to TSA server");
 
 		// FIXME: support proxy servers
 		URLConnection connection = tsaInfo.getTsaUrl().openConnection();
@@ -117,10 +116,10 @@ public class TSAClient {
 		connection.setConnectTimeout(CONNECT_TIMEOUT);
 		connection.setRequestProperty("Content-Type",
 				"application/timestamp-query");
-		
+
 		// TODO set accept header
 
-		log.debug("Established connection to TSA server");
+		LOGGER.debug("Established connection to TSA server");
 
 		String username = tsaInfo.getUsername();
 		char[] password = tsaInfo.getPassword();
@@ -132,11 +131,11 @@ public class TSAClient {
 		// read response
 		sendRequest(request, connection);
 
-		log.debug("Waiting for response from TSA server");
+		LOGGER.debug("Waiting for response from TSA server");
 
 		byte[] response = getResponse(connection);
 
-		log.debug("Received response from TSA server");
+		LOGGER.debug("Received response from TSA server");
 
 		return response;
 	}
@@ -154,39 +153,16 @@ public class TSAClient {
 
 	private byte[] getResponse(URLConnection connection) throws IOException {
 		InputStream input = null;
-		byte[] response;
 		try {
 			input = connection.getInputStream();
-			response = IOUtils.toByteArray(input);
+			return IOUtils.toByteArray(input);
 		} finally {
 			IOUtils.closeQuietly(input);
 		}
-		return response;
 	}
 
-	// FIXME DigestFactory
 	// returns the ASN.1 OID of the given hash algorithm
 	private ASN1ObjectIdentifier getHashObjectIdentifier(String algorithm) {
-		if (algorithm.equals("MD2")) {
-			return new ASN1ObjectIdentifier(PKCSObjectIdentifiers.md2.getId());
-		} else if (algorithm.equals("MD5")) {
-			return new ASN1ObjectIdentifier(PKCSObjectIdentifiers.md5.getId());
-		} else if (algorithm.equals("SHA-1")) {
-			return new ASN1ObjectIdentifier(OIWObjectIdentifiers.idSHA1.getId());
-		} else if (algorithm.equals("SHA-224")) {
-			return new ASN1ObjectIdentifier(
-					NISTObjectIdentifiers.id_sha224.getId());
-		} else if (algorithm.equals("SHA-256")) {
-			return new ASN1ObjectIdentifier(
-					NISTObjectIdentifiers.id_sha256.getId());
-		} else if (algorithm.equals("SHA-384")) {
-			return new ASN1ObjectIdentifier(
-					NISTObjectIdentifiers.id_sha384.getId());
-		} else if (algorithm.equals("SHA-512")) {
-			return new ASN1ObjectIdentifier(
-					NISTObjectIdentifiers.id_sha512.getId());
-		} else {
-			return new ASN1ObjectIdentifier(algorithm);
-		}
+		return DigestFactory.getOID(algorithm);
 	}
 }

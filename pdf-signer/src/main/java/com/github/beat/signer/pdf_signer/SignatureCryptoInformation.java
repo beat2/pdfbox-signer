@@ -3,6 +3,10 @@ import java.security.KeyStore;
 import java.security.Provider;
 
 
+/**
+ * Defines access to the certificates used for signing and the associated private key.
+ *
+ */
 public class SignatureCryptoInformation {
 	
 	private Provider provider;

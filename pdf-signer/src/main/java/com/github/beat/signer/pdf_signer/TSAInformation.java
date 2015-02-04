@@ -1,11 +1,16 @@
 package com.github.beat.signer.pdf_signer;
 import java.net.URL;
 
+/**
+ * Contains the information about one timestamp service.
+ *
+ */
 public class TSAInformation {
 
 	private URL tsaUrl;
 	private char[] password;
 	private String username;
+	private String digestToUseForRequest;
 
 	public char[] getPassword() {
 		return password;
@@ -30,5 +35,14 @@ public class TSAInformation {
 	public void setTsaUrl(URL tsaUrl) {
 		this.tsaUrl = tsaUrl;
 	}
+
+	public String getDigestToUseForRequest() {
+		return digestToUseForRequest;
+	}
+
+	public void setDigestToUseForRequest(String digestToUseForRequest) {
+		this.digestToUseForRequest = digestToUseForRequest;
+	}
+
 
 }
