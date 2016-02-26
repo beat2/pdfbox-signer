@@ -1,7 +1,11 @@
 package com.github.beat.signer.pdf_signer;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.security.KeyStore;
@@ -16,27 +20,70 @@ import org.junit.Test;
 
 public class SigningTest {
 
+	
+	private static final String DUMMY_PDF = "/dummy.pdf";
+
+	@Test
+	public void testX() throws Exception {
+		Security.addProvider(new BouncyCastleProvider());
+		InputStream is = SigningTest.class.getResourceAsStream(DUMMY_PDF);
+		
+		SignatureInformation signatureInfo = createSignatureInfo();
+		Signing signing = new Signing(signatureInfo);
+		
+		ByteArrayOutputStream baos = signing.signPDF(is);
+		
+		File outputFile = new File("target/outputX.pdf");
+		FileOutputStream fos = new FileOutputStream(outputFile);
+		baos.writeTo(fos);
+		fos.close();
+	}
+	
 	@Test
 	public void test() throws Exception {
 		Security.addProvider(new BouncyCastleProvider());
-		File theFile = new File(SigningTest.class.getResource("/dummy.pdf")
-				.toURI());
+		InputStream is = SigningTest.class.getResourceAsStream(DUMMY_PDF);
+		
 		SignatureInformation signatureInfo = createSignatureInfo();
 		Signing signing = new Signing(signatureInfo);
-		File outputFile = new File("src/test/resources/output.pdf");
-		signing.signPDF(outputFile, theFile);
+		
+		ByteArrayOutputStream baos = signing.signPDF(is);
+		
+		File outputFile = new File("target/output.pdf");
+		FileOutputStream fos = new FileOutputStream(outputFile);
+		baos.writeTo(fos);
+		fos.close();
 	}
 
 	@Test
 	public void testNotVis() throws Exception {
 		Security.addProvider(new BouncyCastleProvider());
-		File theFile = new File(SigningTest.class.getResource("/dummy.pdf")
-				.toURI());
+		InputStream is = SigningTest.class.getResourceAsStream(DUMMY_PDF);
 		SignatureInformation signatureInfo = createSignatureInfo();
 		signatureInfo.getSignatureAppearance().setVisibleSignature(false);
+		
 		Signing signing = new Signing(signatureInfo);
-		File outputFile = new File("src/test/resources/output_not_vis.pdf");
-		signing.signPDF(outputFile, theFile);
+		File outputFile = new File("target/output_not_vis.pdf");
+		ByteArrayOutputStream baos = signing.signPDF(is);
+		FileOutputStream fos = new FileOutputStream(outputFile);
+		baos.writeTo(fos);
+		fos.close();
+	}
+	
+	@Test
+	public void noTsa() throws IOException{
+		Security.addProvider(new BouncyCastleProvider());
+		InputStream is = SigningTest.class.getResourceAsStream(DUMMY_PDF);
+		SignatureInformation signatureInfo = createSignatureInfo();
+		signatureInfo.getSignatureAppearance().setVisibleSignature(false);
+		signatureInfo.setTimestamper(null);
+		
+		Signing signing = new Signing(signatureInfo);
+		File outputFile = new File("target/output_no_tsa.pdf");
+		ByteArrayOutputStream baos = signing.signPDF(is);
+		FileOutputStream fos = new FileOutputStream(outputFile);
+		baos.writeTo(fos);
+		fos.close();
 	}
 
 	private SignatureInformation createSignatureInfo() {
